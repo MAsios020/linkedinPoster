@@ -1,43 +1,62 @@
 const express = require('express');
 const { chromium } = require('playwright');
 const app = express();
-app.use(express.json());
+app.use(express.json({ limit: '10mb' })); // عشان لو الداتا كبيرة
 
 app.post('/publish', async (req, res) => {
+    const { cookies, text, image_url } = req.body;
     let logs = [];
     const log = (msg) => { logs.push(`[${new Date().toLocaleTimeString()}] ${msg}`); console.log(msg); };
 
-    log("🚀 Request received");
-    const browser = await chromium.connectOverCDP('wss://browserless.161.97.76.168.nip.io?token=mina123');
+    if (!cookies || !text) {
+        return res.status(400).json({ status: "error", message: "Missing cookies or text" });
+    }
+
+    log("🚀 Starting process for new request...");
+    // استخدام Launch بدل connectOverCDP عشان نتحكم في الـ Dependencies محلياً جوه Docker
+    const browser = await chromium.launch({ headless: true });
     const context = await browser.newContext();
     const page = await context.newPage();
 
-    const cookies = [
-        { "domain": ".www.linkedin.com", "name": "li_at", "value": "AQEFAHQBAAAAABcuv0cAAAGbwfcTpQAAAZvmA5elTQAAF3VybjpsaTptZW1iZXI6NTM3NjE0NDQ4s89jVNCRMexLFKgqPWz4azZtqaNt2XjMrVxcZmJBGl9FZpEQZkOnR8tnKon-jgaFu8VVaaVT5Yb1n3IGE7lB8VekN4QRh7YZUHBukxC5vi3mr_0YtBct9zilUrRQugDE9hUf4R7PNQoH-XWN2_JQKnzvBwRy9zBHxKm2wWFrT_U-vWRN5ZEebx134khVL1nyndA_zQ", "path": "/" },
-        { "domain": ".www.linkedin.com", "name": "JSESSIONID", "value": "\"ajax:7300104970797953763\"", "path": "/" }
-    ];
-
     try {
+        log("🍪 Setting Cookies...");
         await context.addCookies(cookies);
-        await page.goto('https://www.linkedin.com/feed/', { waitUntil: 'domcontentloaded' });
 
+        log("🌐 Navigating to LinkedIn...");
+        await page.goto('https://www.linkedin.com/feed/', { waitUntil: 'domcontentloaded', timeout: 60000 });
+
+        log("🔍 Opening Post Box...");
         const startBtn = '.share-box-feed-entry__trigger, [aria-label="Start a post"]';
         await page.waitForSelector(startBtn, { state: 'visible', timeout: 20000 });
-        await page.click(startBtn, { force: true });
-        log("🖱️ Clicked Start Post");
+        await page.click(startBtn);
 
+        // --- الجزء الخاص بالصورة (اختياري) ---
+        if (image_url) {
+            log("📸 Handling Image...");
+            const uploadBtn = 'button[aria-label="Add a medium"], input[type="file"]';
+            // لو فيه input file بنرفع عليه مباشرة أضمن
+            const fileInput = await page.$('input[type="file"]');
+            if (fileInput) {
+                await fileInput.setInputFiles({
+                    name: 'image.jpg',
+                    mimeType: 'image/jpeg',
+                    buffer: await (await fetch(image_url)).arrayBuffer() // بيحمل الصورة من اللينك ويرفعها
+                });
+                log("✅ Image Uploaded");
+                // استنى زرار الـ Next بعد الصورة
+                await page.click('button:has-text("Next"), .share-box-footer__primary-btn');
+            }
+        }
+
+        log("📝 Typing Content...");
         const editor = '.ql-editor';
         await page.waitForSelector(editor, { state: 'visible', timeout: 15000 });
+        await page.fill(editor, text);
 
-        // النص بييجي من n8n أو نستخدم الافتراضي
-        const content = req.body.text || "Automated Post! 🚀";
-        await page.fill(editor, content);
-        log("✍️ Content Typed");
-
+        log("🚀 Publishing...");
         const postBtn = 'button.share-actions__primary-action';
-        await page.waitForSelector(postBtn, { state: 'visible', timeout: 10000 });
+        await page.waitForSelector(postBtn, { state: 'enabled', timeout: 10000 });
         await page.click(postBtn);
-        log("🚀 Published");
 
         await page.waitForTimeout(5000);
         await browser.close();
@@ -45,9 +64,9 @@ app.post('/publish', async (req, res) => {
 
     } catch (err) {
         log("❌ Error: " + err.message);
-        await browser.close();
+        if (browser) await browser.close();
         res.status(500).json({ status: "error", error: err.message, logs });
     }
 });
 
-app.listen(3000, () => console.log('✅ Server running on port 3000'));
+app.listen(3000, '0.0.0.0', () => console.log('✅ Advanced API running on port 3000'));
