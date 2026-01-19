@@ -50,8 +50,8 @@ app.post('/publish', async (req, res) => {
             await page.waitForTimeout(3000); // وقت بسيط للمعالجة
         }
 
-        log("✍️ Typing Content...");
-        await page.type(editor, text || "");
+        log("✍️ Filling Content (Fast Mode)...");
+        await page.fill(editor, text || "");
 
         log("🚀 Clicking Publish...");
         const postBtn = 'button.share-actions__primary-action';
