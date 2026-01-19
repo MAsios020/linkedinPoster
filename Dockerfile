@@ -1,5 +1,5 @@
 # استخدم نسخة Node الرسمية
-FROM mcr.microsoft.com/playwright:v1.40.0-jammy
+FROM mcr.microsoft.com/playwright:v1.47.0-jammy
 
 # تحديد مكان الشغل جوه الكونتينر
 WORKDIR /app
@@ -18,3 +18,4 @@ EXPOSE 3000
 
 # أمر التشغيل
 CMD ["node", "index.js"]
+
